@@ -1,6 +1,7 @@
 import * as ex from "excalibur";
 import { loader, Resources } from "./resources";
 import { occlusionShader } from "./Lib/occlusionshader";
+import { Sprite } from "excalibur";
 
 var occluder = new ex.ImageSource("test.png", {
   wrapping: ex.ImageWrapping.Repeat,
@@ -11,14 +12,22 @@ let shader = occlusionShader;
 class LightingPostProcessor implements ex.PostProcessor {
   private _shader: ex.ScreenShader | undefined;
   gctx: ex.ExcaliburGraphicsContextWebGL;
-  texture: WebGLTexture;
+  texture: WebGLTexture | null = null;
+  textureArray: Sprite[] = [];
+  frameIndex: number = 0;
 
   constructor(public graphicsContext: ex.ExcaliburGraphicsContextWebGL) {
     this.gctx = graphicsContext;
-    this.texture = this.graphicsContext.textureLoader.load(occluder.image, {}, true) as WebGLTexture;
-    console.log(occluder);
+  }
 
-    console.log(this.texture);
+  setTexture(frame: number) {
+    this.frameIndex = frame;
+  }
+
+  setTextureArray(sprites: Sprite[]) {
+    for (let sprte of sprites) {
+      this.textureArray.push(sprte);
+    }
   }
 
   initialize(gl: WebGL2RenderingContext): void {
@@ -35,13 +44,15 @@ class LightingPostProcessor implements ex.PostProcessor {
   onUpdate(elapsed: number): void {
     let myShader = this._shader?.getShader();
     if (myShader) {
-      this.gctx.textureLoader.load(occluder.image);
-      myShader.setTexture(1, this.texture as WebGLTexture);
-      myShader.trySetUniformFloatVector("u_texturePosition", new ex.Vector(400.0, 300.0));
+      let myTexture = this.gctx.textureLoader.load(this.textureArray[this.frameIndex].image.image);
+      myShader.setTexture(1, myTexture as WebGLTexture);
+      myShader.trySetUniformFloatVector("u_texturePosition", new ex.Vector(300.0 - 32.0, 50.0 - 32.0));
       myShader.trySetUniformFloatVector("u_textureSize", new ex.Vector(64.0, 64.0));
       myShader.trySetUniformInt("u_myOcclusionTexture", 1);
-      myShader.trySetUniformFloat("uLightIntensity", 0.75);
-      myShader.trySetUniformFloatVector("uLightPosition", new ex.Vector(100.0, 100.0));
+
+      myShader.trySetUniformFloat("uLightIntensity", 1.0);
+      myShader.trySetUniformFloatVector("uLightPosition", new ex.Vector(300.0, 50.0));
+      myShader.trySetUniformFloat("uLightFalloff", 0.025);
     }
   }
 
@@ -78,6 +89,36 @@ occluder = Resources.occluder;
 
 var myPP = new LightingPostProcessor(game.graphicsContext as ex.ExcaliburGraphicsContextWebGL);
 game.graphicsContext.addPostProcessor(myPP);
+
+myPP.setTextureArray([
+  Resources.occluder0.toSprite(),
+  Resources.occluder1.toSprite(),
+  Resources.occluder2.toSprite(),
+  Resources.occluder3.toSprite(),
+  Resources.occluder4.toSprite(),
+  Resources.occluder5.toSprite(),
+  Resources.occluder6.toSprite(),
+  Resources.occluder7.toSprite(),
+]);
+myPP.setTexture(0);
+
+let imageIndex = 0;
+let imageDirection = 1;
+setInterval(() => {
+  if (imageDirection == 1) {
+    imageIndex++;
+    if (imageIndex == 7) {
+      imageDirection = -1;
+    }
+  } else {
+    imageIndex--;
+    if (imageIndex == 0) {
+      imageDirection = 1;
+    }
+  }
+
+  myPP.setTexture(imageIndex);
+}, 150);
 
 /* Image Shader
 `#version 300 es

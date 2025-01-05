@@ -7,6 +7,7 @@ out vec4 fragColor;
 uniform vec2 u_resolution;
 uniform vec2 uLightPosition;
 uniform float uLightIntensity;
+uniform float uLightFalloff;
 
 uniform vec2 u_texturePosition; // Position of the second texture
 uniform vec2 u_textureSize;     // Size of the second texture
@@ -29,45 +30,55 @@ float sdRoundedBox(vec2 p, vec2 b, float r) {
     return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
 }
 
-// Calculate shadow based on occluder
+// Convert from pixel coordinates to UV space
+vec2 pixelToUV(vec2 pixel) {
+    return pixel / u_resolution;
+}
+
+// Convert from UV space to pixel coordinates
+vec2 uvToPixel(vec2 uv) {
+    return uv * u_resolution;
+}
+
 float calculateShadow(vec2 point, Occluder occluder) {
     vec2 lightToPoint = point - uLightPosition;
     float rayLength = length(lightToPoint);
-    vec2 rayDir = lightToPoint / rayLength;
+    vec2 rayDir = normalize(lightToPoint);
     
     float shadow = 1.0;
-    const int MAX_STEPS = 32;
+    const int MAX_STEPS = 64;  // Increased for better accuracy
+    float stepSize = 1.0;      // Fixed step size in pixels
     
     vec2 currentPos = uLightPosition;
-    float remainingDistance = rayLength;
+    float distanceTraveled = 0.0;
     
-    for(int i = 0; i < MAX_STEPS && remainingDistance > EPSILON; i++) {
-        // Convert currentPos from pixel coordinates to UV coordinates for texture sampling
-        vec2 sampleUV = currentPos / u_resolution;
+    // Continue marching until we reach the end point
+    while(distanceTraveled < rayLength) {
+        // Check if the current position intersects with occluder bounds
+        vec2 relativePos = currentPos - occluder.position;
+        vec2 normalizedPos = relativePos / occluder.size;
         
-        // Sample the occlusion texture
-        vec4 occlusionSample = texture(u_myOcclusionTexture, sampleUV);
-        
-        // Check if we hit an occluder (black pixel)
-        // Using the red channel, but could use average of RGB if needed
-        if (occlusionSample.r < 0.5) {  // Threshold at 0.5 between black and white
-            shadow = 0.0;
-            break;
+        // If we're inside the occluder bounds
+        if (normalizedPos.x >= 0.0 && normalizedPos.x <= 1.0 && 
+            normalizedPos.y >= 0.0 && normalizedPos.y <= 1.0) {
+            
+            vec4 occlusionSample = texture(u_myOcclusionTexture, normalizedPos);
+            
+            // If we hit an occluder, cast shadow along the remaining ray
+            if (occlusionSample.r < 0.5) {
+                shadow = 0.0;
+                break;
+            }
         }
         
-        // March along the ray
-        float marchDist = min(2.0, remainingDistance); // Fixed step size
-        currentPos += rayDir * marchDist;
-        remainingDistance -= marchDist;
-        
-        // Check if we're outside the texture bounds
-        if (sampleUV.x < 0.0 || sampleUV.x > 1.0 || sampleUV.y < 0.0 || sampleUV.y > 1.0) {
-            break;
-        }
+        // March forward along the ray
+        currentPos += rayDir * stepSize;
+        distanceTraveled = length(currentPos - uLightPosition);
     }
     
     return shadow;
 }
+
 
 void main() {
     vec2 pixelCoord = v_uv * u_resolution;
@@ -82,7 +93,7 @@ void main() {
     
     // Calculate light falloff
     float distance = length(pixelCoord - uLightPosition);
-    float falloff = 1.0 / (1.0 + distance * 0.003); // Adjusted falloff factor for better visibility
+    float falloff = 1.0 / (1.0 + distance * uLightFalloff); // Adjusted falloff factor for better visibility
     
     // Combine lighting with shadow and intensity
     vec3 lightColor = vec3(1.0); // White light - could be made into a uniform for colored lights
@@ -96,3 +107,47 @@ void main() {
     fragColor = vec4(finalColor, 1.0);
 }
 `;
+
+/*
+// Calculate shadow based on occluder
+float calculateShadow(vec2 point, Occluder occluder) {
+    vec2 lightToPoint = point - uLightPosition;
+    float rayLength = length(lightToPoint);
+    vec2 rayDir = lightToPoint / rayLength;
+    
+    float shadow = 1.0;
+    const int MAX_STEPS = 32;
+    float stepSize = rayLength / float(MAX_STEPS);
+
+    vec2 currentPos = uLightPosition;
+    float remainingDistance = rayLength;
+    
+    
+    for(int i = 0; i < MAX_STEPS&& length(currentPos - uLightPosition) < rayLength; i++) {
+        // First convert to local space relative to the occluder texture
+        vec2 relativePos = currentPos - occluder.position;
+
+        // Then normalize to UV coordinates within the texture's bounds
+        vec2 sampleUV = relativePos / occluder.size;
+        
+        // Sample the occlusion texture
+        // Check if we're within the bounds of the occluder texture
+        if (sampleUV.x >= 0.0 && sampleUV.x <= 1.0 && 
+            sampleUV.y >= 0.0 && sampleUV.y <= 1.0) {
+            
+            vec4 occlusionSample = texture(u_myOcclusionTexture, sampleUV);
+            
+            if (occlusionSample.r < 0.5) {
+                shadow = 0.0;
+                break;
+            }
+        }
+        
+        currentPos += rayDir * stepSize;
+             
+    }
+    
+    return shadow;
+}
+
+*/
